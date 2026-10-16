@@ -1,0 +1,15 @@
+{
+  "name": "edgebook",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Complete editable frontend source for the Edgebook trading journal UI/UX preview.",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "node scripts/serve.mjs --watch --port 5173",
+    "check": "node scripts/check.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "build": "npm run check && node scripts/build.mjs",
+    "preview": "node scripts/serve.mjs --dir dist --port 4173"
+  }
+}

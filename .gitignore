@@ -1,0 +1,10 @@
+# Generated output. Edit src/, then run npm run build.
+/dist/
+/node_modules/
+/coverage/
+/.cache/
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
