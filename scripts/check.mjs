@@ -29,7 +29,7 @@ for (const directory of ['src', 'scripts', 'tests']) {
   }
 }
 const html = await readFile(path.join(root, 'index.html'), 'utf8');
-for (const required of ['/src/main.js', '/src/styles/app.css', '/favicon.svg']) {
+for (const required of ['/src/main.js', '/src/styles/app.css', '/src/styles/auth.css', '/favicon.svg']) {
   if (!html.includes(required)) throw new Error(`Missing HTML asset reference: ${required}`);
 }
 console.log(`Checked ${checked} JavaScript files, module paths, and HTML entry points.`);

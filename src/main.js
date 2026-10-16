@@ -1,9 +1,11 @@
+import {createAuthController} from './auth/controller.js';
 /** Application controller: browser state, forms, dialogs, persistence, and UI events. */
 import {csvCell,csvKeys,parseImport as parseTradeCsv} from './lib/csv.js';
 import {TODAY,accounts,generateTrades,initialPlaybooks,initialEntries,stats,sum,daily,groupBy} from './data/index.js';
 import {icon,esc,money,pct,num,dateLabel,signClass,tradeTable,empty,input,selectField,symbolIcon,equityChart} from './components/ui.js';
 import {pages,sidebar,topbar,view,setupArt} from './pages/index.js';
-const STORAGE='edgebook.workspace.v1';
+let STORAGE='edgebook.workspace.v1';
+let authController;
 const defaults={
   trades:generateTrades(),
   entries:initialEntries,
@@ -115,6 +117,7 @@ function render({
 }={
 })
 {
+  if (authController && !authController.allowWorkspace()) return;
   document.body.classList.toggle('collapsed',s.collapsed);
   document.getElementById('app').innerHTML=`${sidebar(s)}<div class="layout">${topbar(s)}<main id="main" class="main" tabindex="-1">${view(s,context())}<footer class="footer"><span>${icon('shield',11)} Your process is your edge. <b>Protect it.</b></span><span>Demo workspace · Sample data through 16 Oct 2026 · Saved in this browser</span></footer></main></div>`;
   document.title=`${pages.find(p=>p[0]===s.page)?.[2]} · Edgebook`;
@@ -129,6 +132,7 @@ function render({
 }
 function nav(page)
 {
+  if (authController && !authController.allowWorkspace()) return;
   if(!pages.some(p=>p[0]===page))
   return;
   closeOverlay();
@@ -365,6 +369,8 @@ function saveSettings()
   }
 }
 const actions={
+  'sign-out':()=>authController.signOut(),
+  'account-menu':accountMenu,
   close:closeOverlay,
   collapse:()=>
   {
@@ -546,6 +552,7 @@ const actions={
 };
 document.addEventListener('click',e=>
 {
+  if (authController && !authController.isWorkspaceReady()) return;
   const el=e.target.closest('button,a,[data-trade],[data-day],.overlay');
   if(!el)
   return;
@@ -718,6 +725,7 @@ function savePendingSettings()
 }
 document.addEventListener('change',async e=>
 {
+  if (authController && !authController.isWorkspaceReady()) return;
   const el=e.target;
   if(el.dataset.filter)
   {
@@ -803,6 +811,7 @@ document.addEventListener('change',async e=>
 );
 document.addEventListener('input',e=>
 {
+  if (authController && !authController.isWorkspaceReady()) return;
   if(e.target.dataset.input==='trade-search')
   {
     s.tradeSearch=e.target.value;
@@ -819,6 +828,7 @@ document.addEventListener('input',e=>
 );
 document.addEventListener('submit',e=>
 {
+  if (authController && !authController.isWorkspaceReady()) return;
   const f=e.target;
   if(!['trade-form','review-form','journal-form','playbook-form','risk-form','connection-form','settings-form'].includes(f.id))
   return;
@@ -1027,6 +1037,7 @@ function validateBackup(b)
 }
 document.addEventListener('keydown',e=>
 {
+  if (authController && !authController.isWorkspaceReady()) return;
   if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k')
   {
     e.preventDefault();
@@ -1072,14 +1083,13 @@ document.addEventListener('keydown',e=>
 );
 window.addEventListener('popstate',()=>
 {
-  s.page=pages.some(p=>p[0]===location.hash.slice(1))?location.hash.slice(1):'overview';
-  closeOverlay();
-  render()
+  authController?.handleRoute();
 }
 );
 let tip;
 document.addEventListener('pointerover',e=>
 {
+  if (authController && !authController.isWorkspaceReady()) return;
   const el=e.target.closest('[data-tip]');
   if(!el)
   return;
@@ -1101,12 +1111,14 @@ function positionTip(e)
 }
 document.addEventListener('pointermove',e=>
 {
+  if (authController && !authController.isWorkspaceReady()) return;
   if(e.target.closest('[data-tip]'))
   positionTip(e)
 }
 );
 document.addEventListener('pointerout',e=>
 {
+  if (authController && !authController.isWorkspaceReady()) return;
   if(e.target.closest('[data-tip]'))
   {
     tip?.remove();
@@ -1114,9 +1126,52 @@ document.addEventListener('pointerout',e=>
   }
 }
 );
-render();
-export {s,context,parseImport,validateBackup,actions,render};
+authController = createAuthController({
+  allowedPages: pages.map(page=>page[0]),
+  onLeave: () => { closeOverlay(); document.querySelector('.chart-tip')?.remove(); },
+  onSession: (session, {changed,destination}) => {
+    if (changed) loadWorkspaceForSession(session);
+    s.authSession = session;
+    s.page = destination;
+    render();
+  },
+  onReady: action => {
+    if (action === 'manual') newTrade();
+    if (action === 'connect') connection(1);
+  }
+});
+authController.start();
+export {s,context,parseImport,validateBackup,actions,render,authController};
 function parseImport(text)
 {
   return parseTradeCsv(text,s.playbooks);
 }
+
+function loadWorkspaceForSession(session) {
+  closeOverlay();
+  const user = session.user;
+  STORAGE = user.id === 'demo' ? 'edgebook.workspace.v1' : 'edgebook.workspace.preview.' + encodeURIComponent(user.email);
+  let stored = null;
+  try { stored = JSON.parse(localStorage.getItem(STORAGE)); } catch {}
+  const base = structuredClone(defaults);
+  for (const key of Object.keys(base)) s[key] = base[key];
+  if (stored && Array.isArray(stored.trades) && Array.isArray(stored.entries) && Array.isArray(stored.playbooks)) {
+    for (const key of Object.keys(defaults)) if (stored[key] !== undefined) s[key] = stored[key];
+    s.profile = {...base.profile,...stored.profile};
+    s.risk = {...base.risk,...stored.risk};
+  } else {
+    s.profile = {...base.profile,name:user.name,timezone:user.timezone||base.profile.timezone,intention:user.intention||base.profile.intention};
+    s.risk = {...base.risk,perTrade:Number(user.risk)||base.risk.perTrade};
+  }
+  Object.assign(s,{account:'all',source:'all',period:'30d',tradeSearch:'',tradeResult:'all',tradeSymbol:'all',tradeSession:'all',tradePage:1,settingsTab:'profile'});
+}
+function accountMenu() {
+  const session = authController.client.getSession();
+  if (!session) return;
+  modal('Your space to grow.', 'Account & workspace', `
+    <div class="auth-security-profile"><span class="avatar">${esc(s.profile.name.split(' ').map(n=>n[0]).slice(0,2).join(''))}</span><span class="spacer"><strong>${esc(s.profile.name)}</strong><small>${esc(session.user.email)}</small></span><span class="pill neutral">Preview</span></div>
+    <button class="choice-card" data-action="account-security">${icon('shield',21)}<div><h3>Account & security</h3><p>Password, verification, and preview session controls</p></div>${icon('chevron',15)}</button>
+    <button class="choice-card" data-nav="settings">${icon('settings',21)}<div><h3>Workspace preferences</h3><p>Your profile, timezone, notifications, and data</p></div>${icon('chevron',15)}</button>
+    <button class="choice-card" data-auth-route="sign-out">${icon('logout',21)}<div><h3>Sign out</h3><p>Your journal stays saved in this browser.</p></div>${icon('chevron',15)}</button>`);
+}
+actions['account-security'] = () => {s.settingsTab='security';nav('settings');};

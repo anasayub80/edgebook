@@ -66,12 +66,40 @@ All ten frontend screens, shared filters, chart tooltips, CSV import/export, man
 
 The initial workspace contains **219 illustrative trades across three sample accounts**, dated July 20–October 16, 2026. Changes persist in this browser through `localStorage`. Entries and screenshots remain local until a backend is implemented. Reset and backup controls are available in **Settings → Data & privacy**.
 
+## Authentication UI/UX flow
+
+The app opens on the sign-in screen. Use **Explore the demo workspace** to enter immediately, or use fictional details to test the complete account journey.
+
+- Sign in and account creation, with field validation, password visibility, strength feedback, and a remember-session option
+- Email verification with a 6-digit code, resend cooldown, invalid-code feedback, and expired-link handling
+- Forgot-password, email-sent, reset-password, mismatch feedback, and success screens
+- Three-step onboarding for profile, timezone, trading preferences, risk, and the first workspace action
+- Workspace route gating, returning to the requested page, tab-only/remembered sessions, idle expiry, and cross-tab sign-out
+- Account menu, change-password preview, two-step verification preview, session controls, and sign-out confirmation
+- Separate local journal storage for different preview identities
+- Social sign-in return preview, preview terms, and privacy notes
+
+**This is a UI/UX simulation, not production authentication.** It does not create real users, validate an existing account's password, send verification/recovery emails, contact Google, or enforce server access. Password values are discarded after form validation and are never saved, hashed, transmitted, logged, or included in backups. Profile/session metadata is explicitly marked as preview data. The sample verification code is **246810**. Use fictional email/password details.
+
+Preview sessions pause after 30 minutes of inactivity. The “keep this preview session” option uses local storage instead of tab storage; this is a UX demonstration, not a secure session credential. Client-side gating does not protect a real backend.
+
+| Source | Purpose |
+| --- | --- |
+| `src/auth/pages.js` | Auth screens and three-step onboarding |
+| `src/auth/controller.js` | Form handling, routing, redirects, session UI, and expiry |
+| `src/auth/service.js` | Replaceable preview-only auth state machine and validation |
+| `src/auth/security.js` | Account/security settings UI |
+| `src/styles/auth.css` | Responsive authentication visual system |
+| `tests/auth.test.mjs` | Verification/reset/session boundaries, state validation, and password non-persistence |
+
+For production, replace the preview adapter with a managed/server-verified auth provider, require verified server sessions for protected data, connect real email delivery and OAuth callbacks, use provider-managed password/rate-limit/MFA mechanisms, and persist user-owned records behind server-side authorization. Never promote browser preview sessions into trusted credentials.
+
 ## What is still to be built
 
-The requested first phase is UI/UX. A backend, user authentication, database, MT5 EA/bridge, broker sync, detailed broker fills, live floating equity, deposits/withdrawals, server-side alerts, and live risk enforcement have **not** been implemented. The connection flow saves a local configuration draft and does not contact a broker or collect trading passwords.
+The requested first phase is UI/UX. A backend, production authentication, database, MT5 EA/bridge, broker sync, detailed broker fills, live floating equity, deposits/withdrawals, server-side alerts, and live risk enforcement have **not** been implemented. The connection flow saves a local configuration draft and does not contact a broker or collect trading passwords.
 
 The position calculator demonstrates USD-quoted instruments using a user-supplied contract size and a 0.01 lot step. Broker-specific specifications and currency conversion belong in the integration phase. Session groupings use fixed UTC windows in this preview; DST-aware templates also belong in that phase.
 
 ## Verification
 
-Run `npm run check`, `npm test`, and `npm run build`. The workflow test covers all screens and account filters, five analytics tabs, source/time filters, empty chart samples, CSV validation, manual trade propagation, review saving, journal habits, setup creation, risk rules, connection drafts, and local backups. Browser visual QA was unavailable during this repository restructuring.
+Run `npm run check`, `npm test`, and `npm run build`. The workflow test covers all screens and account filters, five analytics tabs, source/time filters, empty chart samples, CSV validation, manual trade propagation, review saving, journal habits, setup creation, risk rules, connection drafts, and local backups. Auth checks additionally cover the full form-to-workspace journey, onboarding, second-step verification, expired sessions, recovery, and the absence of passwords from persisted state. Browser visual QA was unavailable during this repository restructuring.

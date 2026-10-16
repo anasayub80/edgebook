@@ -9,11 +9,14 @@ const elements=new Map(),handlers={},local=new Map();
 function el(id){return {id,innerHTML:'',style:{},dataset:{},setAttribute(){},removeAttribute(){},querySelector(){return null},querySelectorAll(){return []},focus(){},append(){},remove(){},classList:{toggle(){},remove(){},add(){}}};}
 for(const id of ['app','overlay-root','toast-root'])elements.set(id,el(id));
 globalThis.document={body:el('body'),activeElement:el('active'),getElementById:id=>elements.get(id)||null,querySelector:()=>null,querySelectorAll:()=>[],addEventListener:(name,fn)=>(handlers[name]??=[]).push(fn),createElement:()=>el('created')};
-globalThis.location={hash:''};globalThis.history={pushState(a,b,hash){location.hash=hash}};
+globalThis.location={hash:''};globalThis.history={pushState(a,b,hash){location.hash=hash},replaceState(a,b,hash){location.hash=hash}};
 globalThis.localStorage={getItem:k=>local.get(k)||null,setItem:(k,v)=>local.set(k,v),removeItem:k=>local.delete(k)};
 globalThis.window={addEventListener(){},scrollTo(){},innerWidth:1440,innerHeight:1000,print(){}};
 globalThis.FormData=class {constructor(f){return new Map(Object.entries(f.values))}};
-const {s,context,parseImport,validateBackup,actions}=await import(new URL('../src/main.js',import.meta.url).href);
+const {s,context,parseImport,validateBackup,actions,authController}=await import(new URL('../src/main.js',import.meta.url).href);
+assert(elements.get('app').innerHTML.includes('Welcome back.'));
+authController.enterDemo();
+assert(elements.get('app').innerHTML.includes('Performance overview'));
 const {view,pages,sidebar,topbar}=await import(new URL('../src/pages/index.js',import.meta.url).href);
 const {stats,sum,daily,generateTrades}=await import(new URL('../src/data/index.js',import.meta.url).href);
 const {equityChart,metricStrip}=await import(new URL('../src/components/ui.js',import.meta.url).href);
@@ -50,5 +53,53 @@ for(const fn of ['connect','add-trade','add-entry','add-playbook','edit-risk','r
 fs.writeFileSync(`${output}/actions.json`,JSON.stringify(Object.keys(actions)));
 console.log(JSON.stringify({status:'PASS',renderedScreens:screens,trades:originalCount,checked:['account/source/time filters','all 10 pages','5 analytics tabs','empty and one-sided chart samples','CSV required and optional fields','CSV date/time/account/risk errors','multiline CSV quotes','manual trade metric propagation','trade review and execution tabs','journal and habit persistence','playbook creation','risk rule ordering','connection draft save','local storage and backups','all primary modals']}));
 
+
+// Auth routes gate the workspace, preserve local work, and return to a requested page.
+authController.signOut({immediate:true});
+assert(elements.get('app').innerHTML.includes('You’re signed out'));
+click({nav:'risk'});
+assert(elements.get('app').innerHTML.includes('Welcome back.'));
+location.hash='#trades';authController.handleRoute();
+assert(elements.get('app').innerHTML.includes('Welcome back.'));
+authController.client.signIn({email:'trader@edgebook.demo',password:'sample'});
+authController.handleRoute();
+assert.equal(s.page,'trades');
+assert.equal(s.trades.length,originalCount+1);
+// A different preview identity gets its own workspace namespace.
+authController.signOut({immediate:true});
+authController.client.signIn({email:'new@example.com',password:'sample'});
+authController.client.completeOnboarding({name:'New Trader',timezone:'UTC',risk:.3});
+authController.handleRoute();
+assert.equal(s.profile.name,'New Trader');assert.equal(s.trades.length,originalCount);
+authController.enterDemo();assert.equal(s.trades.length,originalCount+1);
+
+// Exercise the complete UI controller journey through its actual submit handlers.
+const submitAuth=async values=>{const f={...values,reportValidity:()=>true,querySelector:()=>null};for(const fn of handlers.submit)await fn({target:f,preventDefault(){}})};
+authController.signOut({immediate:true});click({authRoute:'sign-up'});
+await submitAuth({id:'auth-sign-up-form',values:{name:'Taylor',email:'taylor@example.com',password:'Sample-Password123',terms:'on'}});
+assert.equal(authController.state.route,'verify-email');assert.equal(authController.client.getSession(),null);
+await submitAuth({id:'auth-code-form',values:{code:'246810'}});
+assert.equal(authController.state.route,'onboarding');
+await submitAuth({id:'auth-onboarding-form',values:{name:'Taylor Morgan',timezone:'UTC',intention:'Understand my trading edge'}});
+assert.equal(authController.state.onboardingStep,1);
+await submitAuth({id:'auth-onboarding-form',values:{risk:'.4'}});
+assert.equal(authController.state.onboardingStep,2);
+await submitAuth({id:'auth-onboarding-form',values:{}});
+assert(authController.isWorkspaceReady());assert.equal(s.profile.name,'Taylor Morgan');assert.equal(s.profile.timezone,'UTC');assert.equal(s.risk.perTrade,.4);
+s.settingsTab='security';click({authAction:'toggle-mfa'});assert(s.authSession.user.mfa);
+authController.signOut({immediate:true});
+await submitAuth({id:'auth-sign-in-form',values:{email:'taylor@example.com',password:'Sample-Password123'}});
+assert.equal(authController.state.route,'mfa');assert.equal(authController.client.getSession(),null);
+await submitAuth({id:'auth-code-form',values:{code:'246810'}});assert(authController.isWorkspaceReady());
+click({authAction:'expire-session'});assert.equal(authController.state.route,'session-expired');
+click({authRoute:'forgot-password'});
+await submitAuth({id:'auth-forgot-form',values:{email:'taylor@example.com'}});assert.equal(authController.state.route,'reset-sent');
+click({authRoute:'reset-password'});
+await submitAuth({id:'auth-reset-password-form',values:{password:'New-Sample-Password123',confirmPassword:'Mismatch'}});
+assert(authController.state.errors.confirmPassword);
+await submitAuth({id:'auth-reset-password-form',values:{password:'New-Sample-Password123',confirmPassword:'New-Sample-Password123'}});
+assert.equal(authController.state.route,'reset-success');assert.equal(authController.client.getSession(),null);
+for(const [key,value] of local)assert(!String(value).includes('Sample-Password123'),key);
+authController.destroy();
 fs.rmSync(output,{recursive:true,force:true});
 });
